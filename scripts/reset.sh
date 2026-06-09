@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Local AI Image Generator - Linux Reset Script
+# Local AI Image Generator - Linux/macOS Reset Script
 # Resets portable app dependencies/builds while preserving user models and outputs.
 #
 

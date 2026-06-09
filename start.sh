@@ -1,15 +1,25 @@
 #!/usr/bin/env bash
 #
-# Local AI Image Generator - Linux Launcher
+# Local AI Image Generator - Linux/macOS Launcher
 # Double-click or run: ./start.sh
-# Use --max-perf to enable ROCm/CUDA backend downloads on first setup.
+# Use --max-perf to enable ROCm backend downloads on Linux first setup.
 #
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 APP_DIR="$SCRIPT_DIR/app"
-NODE_DIR="$APP_DIR/tools/node-linux"
+PLATFORM="$(uname -s)"
+if [[ "$PLATFORM" == "Darwin" ]]; then
+  NODE_DIR="$APP_DIR/tools/node-mac"
+  BACKEND_PATH="$APP_DIR/backend/mac/sd"
+  PLATFORM_LABEL="macOS"
+else
+  NODE_DIR="$APP_DIR/tools/node-linux"
+  BACKEND_PATH="$APP_DIR/backend/linux/vulkan/sd-vulkan"
+  CPU_BACKEND_PATH="$APP_DIR/backend/linux/cpu/sd-cpu"
+  PLATFORM_LABEL="Linux"
+fi
 NODE_BIN="$NODE_DIR/bin/node"
 DIST_INDEX="$APP_DIR/dist/index.html"
 SETUP_SCRIPT="$SCRIPT_DIR/scripts/setup.sh"
@@ -38,15 +48,21 @@ if [[ ! -f "$DIST_INDEX" ]]; then
   SETUP_REASON="Frontend build is missing."
 fi
 
-# At minimum we need CPU or Vulkan backend on Linux
-if [[ ! -f "$APP_DIR/backend/linux/cpu/sd-cpu" && ! -f "$APP_DIR/backend/linux/vulkan/sd-vulkan" ]]; then
-  SETUP_REASON="No Linux backend binary is installed."
+if [[ "$PLATFORM" == "Darwin" ]]; then
+  if [[ ! -x "$BACKEND_PATH" ]]; then
+    SETUP_REASON="No macOS Metal backend binary is installed."
+  fi
+else
+  # At minimum we need CPU or Vulkan backend on Linux
+  if [[ ! -f "$CPU_BACKEND_PATH" && ! -f "$BACKEND_PATH" ]]; then
+    SETUP_REASON="No Linux backend binary is installed."
+  fi
 fi
 
 if [[ -n "$SETUP_REASON" ]]; then
   echo ""
   echo "  ============================================================"
-  echo "   LOCAL AI IMAGE GENERATOR  |  $SETUP_MODE"
+  echo "   LOCAL AI IMAGE GENERATOR  |  $PLATFORM_LABEL $SETUP_MODE"
   echo "  ============================================================"
   echo ""
   if [[ "$SETUP_MODE" == "First-Time Setup" ]]; then
@@ -98,7 +114,10 @@ SERVER_PID=$!
 sleep 2
 
 # Open browser
-if command -v xdg-open >/dev/null 2>&1; then
+if [[ "$PLATFORM" == "Darwin" ]] && command -v open >/dev/null 2>&1; then
+  echo "  Opening browser at http://localhost:${FRONTEND_PORT}"
+  open "http://localhost:${FRONTEND_PORT}" >/dev/null 2>&1 &
+elif command -v xdg-open >/dev/null 2>&1; then
   echo "  Opening browser at http://localhost:${FRONTEND_PORT}"
   xdg-open "http://localhost:${FRONTEND_PORT}" >/dev/null 2>&1 &
 else

@@ -1,6 +1,6 @@
 # 🖼️ Local AI Image Generator
 
-### An easy, zero-setup Stable Diffusion GUI for Windows and Linux. Run GGUF & Safetensors models offline without Python configuration.
+### An easy, zero-setup Stable Diffusion GUI for Windows, Linux, and macOS. Run GGUF & Safetensors models offline without Python configuration.
 
 
 
@@ -22,7 +22,7 @@
 ---
 
 ## 📖 Overview
-**Local AI Image Generator** is a zero-configuration, portable desktop environment for running Stable Diffusion (Safetensors/GGUF/CKPT) offline on Windows and Linux. Double-clicking `start.bat` (Windows) or running `./start.sh` (Linux) automatically handles dependency setup, GPU backend matching, and launches a high-performance local web workspace.
+**Local AI Image Generator** is a zero-configuration, portable desktop environment for running Stable Diffusion (Safetensors/GGUF/CKPT) offline on Windows, Linux, and macOS. Double-clicking `start.bat` (Windows) or running `./start.sh` (Linux/macOS) automatically handles dependency setup, GPU backend matching, and launches a high-performance local web workspace.
 
 ---
 
@@ -40,11 +40,17 @@
 3. **Add Models:** Drop `.safetensors`, `.gguf`, or `.ckpt` weights into `app/models/` (or download them via the **Model Manager** tab in the UI).
 4. **Generate:** Open `http://localhost:1420` in your browser, select your model, and write a prompt.
 
+### macOS
+1. **Check compatibility:** The prebuilt macOS backend is for **Apple Silicon (M1 or newer)** and uses **Metal** GPU acceleration.
+2. **Launch:** Open Terminal in the project folder and run **`./start.sh`** (downloads portable Node.js and the pre-compiled Metal backend on first run).
+3. **Add Models:** Drop `.safetensors`, `.gguf`, or `.ckpt` weights into `app/models/` (or download them via the **Model Manager** tab in the UI).
+4. **Generate:** Open `http://localhost:1420` in your browser, select your model, and write a prompt.
+
 ---
 
 ## ✨ Features
 *   **100% Offline & Private:** Inference runs completely locally on your hardware.
-*   **Auto-Detected GPU Acceleration:** Configures **CUDA** for Nvidia cards, **ROCm** for AMD cards, and **Vulkan** for AMD/Intel/NVIDIA fallback.
+*   **Auto-Detected GPU Acceleration:** Configures **CUDA** for Nvidia cards, **ROCm** for AMD cards, **Vulkan** for AMD/Intel/NVIDIA fallback, and **Metal** for Apple Silicon Macs.
 *   **Zero System Footprint:** Node.js is sandboxed inside the folder. No global environment paths are altered.
 *   **Integrated Model Manager:** Paste a Hugging Face URL to download weights directly, or drag-and-drop local weight files to import them.
 *   **Real-time Telemetry:** Monitor RAM, VRAM, CPU, and GPU load directly in the UI.
@@ -56,16 +62,16 @@
 ```
 local-ai-image-generator/
 ├── start.bat                  # Main double-click entrypoint (Windows)
-├── start.sh                   # Main terminal entrypoint (Linux)
+├── start.sh                   # Main terminal entrypoint (Linux/macOS)
 ├── PLAN.md                    # Linux port implementation plan
 ├── LICENSE                    # MIT Open Source license
 ├── .gitignore
 ├── README.md                  
 ├── scripts/
 │   ├── setup.ps1              # Automated GPU-detect and environment installer (Windows)
-│   ├── setup.sh               # Automated GPU-detect and environment installer (Linux)
+│   ├── setup.sh               # Automated GPU-detect and environment installer (Linux/macOS)
 │   ├── reset.ps1              # Cleans runtime environments (Windows)
-│   ├── reset.sh               # Cleans runtime environments (Linux)
+│   ├── reset.sh               # Cleans runtime environments (Linux/macOS)
 │   └── serve.cjs              # UI web server and backend lifecycle manager
 └── app/
     ├── frontend/              # UI source code (Vite + React)
@@ -95,9 +101,17 @@ local-ai-image-generator/
 | **Intel Arc / integrated** | Vulkan | CPU | Cross-vendor Vulkan support. |
 | **Integrated / None** | CPU | — | Runs on logical CPU threads (slow). |
 
+### macOS
+
+| Hardware | Primary | Fallback | Notes |
+| :--- | :--- | :--- | :--- |
+| **Apple Silicon (M1 or newer)** | Metal | CPU | Uses the official Darwin arm64 stable-diffusion.cpp backend. |
+| **Intel Mac** | Source build required | CPU | Official prebuilt macOS backend is Apple Silicon only. |
+
 **System requirements:**
 - **glibc 2.38 or newer** is required for the prebuilt Linux backends (Ubuntu 24.04, Fedora 40+, etc.).
 - The setup script will warn you if your glibc is older. You can still run setup, but the prebuilt backends will not start.
+- **Apple Silicon (M1 or newer)** is required for the prebuilt macOS Metal backend.
 
 **Linux setup modes:**
 - **Default (`./start.sh`)**: Downloads CPU + Vulkan backends (~120–150 MB).
@@ -118,7 +132,7 @@ Typical generation times for an image with **20 steps** (e.g. 512x512 resolution
 ---
 
 ## 🛠️ Troubleshooting
-*   **Reset Environment:** If a build fails or you want to clear dependencies, run `scripts/reset.ps1` (Windows) or `scripts/reset.sh` (Linux). (This preserves your models and generated images).
+*   **Reset Environment:** If a build fails or you want to clear dependencies, run `scripts/reset.ps1` (Windows) or `scripts/reset.sh` (Linux/macOS). (This preserves your models and generated images).
 *   **Port Conflicts:** The frontend uses `1420` by default. The backend tries `8080` first, then automatically falls back to a free port if `8080` is already busy.
 *   **Linux backends fail to start with `GLIBC_2.38' not found`:** The prebuilt binaries require glibc 2.38+ (Ubuntu 24.04). Upgrade your distribution or build stable-diffusion.cpp from source (see below).
 *   **Linux ROCm not loading:** Make sure your AMD GPU and kernel are compatible with ROCm 7.13. The app will automatically fall back to Vulkan if ROCm cannot initialize.
@@ -130,11 +144,14 @@ Typical generation times for an image with **20 steps** (e.g. 512x512 resolution
 
 If your distribution has an older glibc than 2.38, or you want a CUDA backend on Linux, you can build `stable-diffusion.cpp` directly on your machine. The resulting binary will be linked against your system's glibc and will not have the compatibility issues of the prebuilt releases.
 
+For macOS, the included `scripts/build_from_source.sh` builds the Metal backend and copies it to `app/backend/mac/sd`.
+
 ### Requirements
 - `git`, `cmake`, `make` (or `ninja`), and a C++17 compiler (`g++` / `clang++`).
 - For **CUDA**: the NVIDIA CUDA toolkit (`nvcc`) must be on your `PATH`.
 - For **Vulkan**: the Vulkan SDK / loader and a compatible driver.
 - For **ROCm**: AMD ROCm development libraries.
+- For **macOS Metal**: Apple Command Line Tools or Xcode.
 
 ### Build commands
 
@@ -157,8 +174,11 @@ cmake .. -DSD_VULKAN=ON -DSD_BUILD_SHARED_LIBS=ON -DCMAKE_BUILD_TYPE=Release
 # ROCm
 cmake .. -DSD_HIPBLAS=ON -DSD_BUILD_SHARED_LIBS=ON -DCMAKE_BUILD_TYPE=Release
 
+# macOS Metal
+cmake .. -DSD_METAL=ON -DSD_BUILD_SHARED_LIBS=ON -DCMAKE_BUILD_TYPE=Release
+
 # 3. Build
-cmake --build . --config Release -j$(nproc)
+cmake --build . --config Release -j$(getconf _NPROCESSORS_ONLN 2>/dev/null || sysctl -n hw.ncpu)
 
 # 4. Copy the binaries into this project
 cp bin/sd* /path/to/Local-AI-Image-Generator/app/backend/linux/<backend>/

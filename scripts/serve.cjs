@@ -28,10 +28,10 @@ const BACKEND_PATHS = {
   cuda: path.join(ROOT, "app", "backend", "win", "cuda", "sd-cuda.exe"),
   vulkan: path.join(ROOT, "app", "backend", "win", "vulkan", "sd-vulkan.exe"),
   mac: path.join(ROOT, "app", "backend", "mac", "sd"),
-  linuxCpu: path.join(ROOT, "app", "backend", "linux", "cpu", "sd-cpu"),
-  linuxVulkan: path.join(ROOT, "app", "backend", "linux", "vulkan", "sd-vulkan"),
-  linuxRocm: path.join(ROOT, "app", "backend", "linux", "rocm", "sd-rocm"),
-  linuxCuda: path.join(ROOT, "app", "backend", "linux", "cuda", "sd-cuda"),
+  linuxCpu: path.join(ROOT, "app", "backend", "linux", "cpu", "sd-server-cpu"),
+  linuxVulkan: path.join(ROOT, "app", "backend", "linux", "vulkan", "sd-server-vulkan"),
+  linuxRocm: path.join(ROOT, "app", "backend", "linux", "rocm", "sd-server-rocm"),
+  linuxCuda: path.join(ROOT, "app", "backend", "linux", "cuda", "sd-server-cuda"),
 };
 let BACKEND_PATH = "";
 if (osPlatform === "win32") {
@@ -186,6 +186,21 @@ function getGpuInfo() {
       cachedGpuInfo = linuxGpu;
       return cachedGpuInfo;
     }
+  }
+
+  if (osPlatform === "darwin") {
+    try {
+      const output = execSync(
+        "system_profiler SPDisplaysDataType | awk -F': ' '/Chipset Model|Vendor/ {print $2; exit}'",
+        { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] },
+      ).trim();
+      if (output) {
+        cachedGpuInfo = { name: output };
+        return cachedGpuInfo;
+      }
+    } catch (_) {}
+    cachedGpuInfo = { name: "Apple Metal GPU" };
+    return cachedGpuInfo;
   }
 
   cachedGpuInfo = { name: "Unavailable" };
@@ -588,8 +603,11 @@ function getBackendOptions() {
   const rocmInstalled = osPlatform === "linux" && fs.existsSync(BACKEND_PATHS.linuxRocm);
   const rocmAvailable = rocmInstalled && hasAmdGpu() && backendAccepts(BACKEND_PATHS.linuxRocm, "rocm");
   const cpuInstalled = osPlatform === "linux" && fs.existsSync(BACKEND_PATHS.linuxCpu);
+  const metalInstalled = osPlatform === "darwin" && fs.existsSync(BACKEND_PATHS.mac);
+  const metalAvailable = metalInstalled && backendAccepts(BACKEND_PATHS.mac, "metal");
 
   const options = [{ id: "cpu", label: "CPU", available: true }];
+  if (metalAvailable) options.push({ id: "metal", label: "Metal GPU", available: true });
   if (vulkanAvailable) options.push({ id: "vulkan", label: "Vulkan GPU", available: true });
   if (rocmAvailable) options.push({ id: "rocm", label: "ROCm GPU (AMD)", available: true });
   if (cudaAvailable) options.push({ id: "cuda", label: "CUDA GPU", available: true });
@@ -604,9 +622,14 @@ function getBackendOptions() {
   if (rocmInstalled && !rocmAvailable) {
     unavailable.push({ id: "rocm", label: "ROCm GPU (AMD)", reason: "Installed, but ROCm backend validation failed." });
   }
+  if (metalInstalled && !metalAvailable) {
+    unavailable.push({ id: "metal", label: "Metal GPU", reason: "Installed, but Metal backend validation failed." });
+  }
 
   let defaultBackend = "cpu";
-  if (cudaAvailable) {
+  if (metalAvailable) {
+    defaultBackend = "metal";
+  } else if (cudaAvailable) {
     const gpuName = String(getGpuInfo().name).toLowerCase();
     const isGtxCard = gpuName.includes("gtx");
     if (isGtxCard && vulkanAvailable) {
@@ -626,6 +649,7 @@ function getBackendOptions() {
     cudaAvailable,
     vulkanAvailable,
     rocmAvailable,
+    metalAvailable,
     defaultBackendType: defaultBackend,
   };
   return cachedBackendOptions;
@@ -640,7 +664,17 @@ function backendAccepts(binaryPath, backendName) {
       "--model", path.join(MODELS, "__backend_probe_missing__.safetensors"),
       "--listen-port", "18082",
     ];
-    let result = spawnSync(binaryPath, probeArgs, { encoding: "utf8", timeout: 5000 });
+    const spawnEnv = { ...process.env };
+    if (osPlatform === "linux") {
+      const dir = path.dirname(binaryPath);
+      const existing = spawnEnv.LD_LIBRARY_PATH || "";
+      spawnEnv.LD_LIBRARY_PATH = dir + (existing ? ":" + existing : "");
+    } else if (osPlatform === "darwin") {
+      const dir = path.dirname(binaryPath);
+      const existing = spawnEnv.DYLD_LIBRARY_PATH || "";
+      spawnEnv.DYLD_LIBRARY_PATH = dir + (existing ? ":" + existing : "");
+    }
+    let result = spawnSync(binaryPath, probeArgs, { encoding: "utf8", timeout: 5000, env: spawnEnv });
     let output = `${result.stdout || ""}\n${result.stderr || ""}`;
 
     // Some binaries do not support --backend. If we see "unknown argument",
@@ -650,7 +684,7 @@ function backendAccepts(binaryPath, backendName) {
         "--model", path.join(MODELS, "__backend_probe_missing__.safetensors"),
         "--listen-port", "18082",
       ];
-      result = spawnSync(binaryPath, fallbackArgs, { encoding: "utf8", timeout: 5000 });
+      result = spawnSync(binaryPath, fallbackArgs, { encoding: "utf8", timeout: 5000, env: spawnEnv });
       output = `${result.stdout || ""}\n${result.stderr || ""}`;
     }
 
@@ -691,7 +725,11 @@ function selectBackendPath(useGpu, backendType = "auto") {
     if (fs.existsSync(BACKEND_PATHS.linuxCpu)) return BACKEND_PATHS.linuxCpu;
     return BACKEND_PATH;
   }
-  // macOS fallback
+  if (osPlatform === "darwin") {
+    if (fs.existsSync(BACKEND_PATHS.mac)) return BACKEND_PATHS.mac;
+    return BACKEND_PATH;
+  }
+  // generic fallback
   if (fs.existsSync(BACKEND_PATHS.mac)) return BACKEND_PATHS.mac;
   return BACKEND_PATH;
 }
@@ -709,6 +747,7 @@ function getBackendMode(backendPath, useGpu, backendType = "auto") {
   if (name.includes("cuda")) return "CUDA GPU";
   if (name.includes("rocm")) return "ROCm GPU";
   if (name.includes("vulkan")) return "Vulkan GPU";
+  if (osPlatform === "darwin" || backendType === "metal") return "Metal GPU";
   return "GPU";
 }
 
@@ -882,6 +921,13 @@ async function startBackend(settings = {}) {
       "--rng", "cpu",
       "--sampler-rng", "cpu",
     );
+  } else if (requestedBackend === "metal") {
+    args.push(
+      "--backend", "metal",
+      "--params-backend", "metal",
+      "--rng", "cpu",
+      "--sampler-rng", "cpu",
+    );
   }
 
   if (currentSettings.vaeTiling) {
@@ -909,6 +955,10 @@ async function startBackend(settings = {}) {
       const existing = spawnEnv.LD_LIBRARY_PATH || "";
       spawnEnv.LD_LIBRARY_PATH = extraLibs.join(":") + (existing ? ":" + existing : "");
     }
+  } else if (osPlatform === "darwin") {
+    const existing = spawnEnv.DYLD_LIBRARY_PATH || "";
+    const backendDir = path.dirname(BACKEND_PATHS.mac);
+    spawnEnv.DYLD_LIBRARY_PATH = backendDir + (existing ? ":" + existing : "");
   }
 
   console.log("  [backend] Starting:", path.basename(backendPath), args.join(" "));
@@ -1825,7 +1875,7 @@ const server = http.createServer(async (req, res) => {
   });
 });
 
-server.listen(PORT_FRONTEND, "127.0.0.1", () => {
+server.listen(PORT_FRONTEND, "0.0.0.0", () => {
   console.log("");
   console.log("  ============================================================");
   console.log("   LOCAL AI IMAGE GENERATOR  |  Running");
