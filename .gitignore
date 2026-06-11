@@ -8,6 +8,8 @@ app/outputs/
 # Ignore portable Node.js binaries and packages
 app/tools/
 **/node_modules/
+**/node_modules_mac/
+**/node_modules_linux/
 node_modules/
 
 # Ignore backend folder completely (contains massive DLLs, EXEs, and ZIPs >1GB)

@@ -388,6 +388,16 @@ if (-not (Test-Path $npmCmd)) {
     Read-Host; exit 1
 }
 
+# If node_modules is a Unix symlink/junction, remove it so Windows can install natively into a real directory
+$nodeModulesDir = Join-Path $frontendDir "node_modules"
+if (Test-Path $nodeModulesDir) {
+    $item = Get-Item $nodeModulesDir
+    if ($item.Attributes -match "ReparsePoint") {
+        Print-Info "Removing Unix symlink for node_modules on Windows..."
+        Remove-Item $nodeModulesDir -Force -ErrorAction SilentlyContinue
+    }
+}
+
 Push-Location $frontendDir
 $oldPath = $env:PATH
 try {
@@ -419,7 +429,7 @@ try {
 # ── Done ─────────────────────────────────────────────────────────────────────
 Write-Host ""
 Write-Host "  ============================================================" -ForegroundColor Green
-Write-Host "   Setup complete! Just double-click start.bat to launch." -ForegroundColor Green
+Write-Host "   Setup complete! Just double-click windows.bat to launch." -ForegroundColor Green
 Write-Host "  ============================================================" -ForegroundColor Green
 Write-Host ""
 Read-Host "  Press Enter to close..."
