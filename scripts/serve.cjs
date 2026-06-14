@@ -103,6 +103,7 @@ let currentSettings = {
   backendType: "auto",
   vaeTiling: true,
   vaeOnCpu:  false,
+  flashAttn: true,
 };
 
 let lastCpuSample = null;
@@ -278,6 +279,38 @@ function getNvidiaVram() {
   return cachedVramInfo;
 }
 
+let cachedMacRamUsedGb = null;
+function pollMacRam() {
+  if (osPlatform !== "darwin") return;
+  exec("vm_stat", (err, stdout) => {
+    if (err) return;
+    try {
+      const vmStat = stdout.toString();
+      const pageSizeMatch = vmStat.match(/page size of (\d+) bytes/);
+      const pageSize = pageSizeMatch ? parseInt(pageSizeMatch[1], 10) : 4096;
+
+      const getVal = (key) => {
+        const match = vmStat.match(new RegExp(key + ":\\s+(\\d+)\\."));
+        return match ? parseInt(match[1], 10) : 0;
+      };
+
+      const freePages = getVal("Pages free");
+      const inactivePages = getVal("Pages inactive");
+      const speculativePages = getVal("Pages speculative");
+      
+      const totalFreeBytes = (freePages + inactivePages + speculativePages) * pageSize;
+      cachedMacRamUsedGb = roundGb(os.totalmem() - totalFreeBytes);
+    } catch (e) {
+      // Ignore parsing errors
+    }
+  });
+}
+
+if (osPlatform === "darwin") {
+  pollMacRam();
+  setInterval(pollMacRam, 5000);
+}
+
 function getHardwareSpecs() {
   const cpus = os.cpus();
   const gpu = getGpuInfo();
@@ -293,9 +326,13 @@ function getHardwareSpecs() {
 
 function getTelemetry() {
   const vram = getNvidiaVram();
+  let ram_used_gb = roundGb(os.totalmem() - os.freemem());
+  if (osPlatform === "darwin" && cachedMacRamUsedGb !== null) {
+    ram_used_gb = cachedMacRamUsedGb;
+  }
   return {
     cpu_usage: getCpuUsagePercent(),
-    ram_used_gb: roundGb(os.totalmem() - os.freemem()),
+    ram_used_gb,
     ram_total_gb: roundGb(os.totalmem()),
     gpu_name: vram?.gpu_name || getGpuInfo().name,
     vram_used_gb: vram?.vram_used_gb || 0,
@@ -604,13 +641,12 @@ function getBackendOptions() {
   const rocmAvailable = rocmInstalled && hasAmdGpu() && backendAccepts(BACKEND_PATHS.linuxRocm, "rocm");
   const cpuInstalled = osPlatform === "linux" && fs.existsSync(BACKEND_PATHS.linuxCpu);
   const metalInstalled = osPlatform === "darwin" && fs.existsSync(BACKEND_PATHS.mac);
-  // Darwin release binaries are Metal builds. Treat an installed macOS backend
-  // as Metal-capable so the UI does not default to CPU if a probe flag changes
-  // upstream.
   const metalAvailable = metalInstalled;
+  const coremlAvailable = osPlatform === "darwin" && fs.existsSync("/Users/orailnoor/workspace/coreml_conversion/venv/bin/python");
 
   const options = [{ id: "cpu", label: "CPU", available: true }];
   if (metalAvailable) options.push({ id: "metal", label: "Metal GPU", available: true });
+  if (coremlAvailable) options.push({ id: "apple-npu", label: "Apple Neural Engine (NPU)", available: true });
   if (vulkanAvailable) options.push({ id: "vulkan", label: "Vulkan GPU", available: true });
   if (rocmAvailable) options.push({ id: "rocm", label: "ROCm GPU (AMD)", available: true });
   if (cudaAvailable) options.push({ id: "cuda", label: "CUDA GPU", available: true });
@@ -630,7 +666,9 @@ function getBackendOptions() {
   }
 
   let defaultBackend = "cpu";
-  if (metalAvailable) {
+  if (coremlAvailable) {
+    defaultBackend = "apple-npu";
+  } else if (metalAvailable) {
     defaultBackend = "metal";
   } else if (cudaAvailable) {
     const gpuName = String(getGpuInfo().name).toLowerCase();
@@ -661,13 +699,19 @@ function getBackendOptions() {
 function backendAccepts(binaryPath, backendName) {
   if (!binaryPath || !fs.existsSync(binaryPath)) return false;
   try {
-    const cliBackendName = backendName === "metal" ? "metal0" : backendName;
-    const probeArgs = [
+    const cliBackendName = backendName;
+    let probeArgs = [
       "--backend", cliBackendName,
       "--params-backend", cliBackendName,
       "--model", path.join(MODELS, "__backend_probe_missing__.safetensors"),
       "--listen-port", "18082",
     ];
+    if (cliBackendName === "metal") {
+      probeArgs = [
+        "--model", path.join(MODELS, "__backend_probe_missing__.safetensors"),
+        "--listen-port", "18082",
+      ];
+    }
     const spawnEnv = { ...process.env };
     if (osPlatform === "linux") {
       const dir = path.dirname(binaryPath);
@@ -707,8 +751,8 @@ function backendAccepts(binaryPath, backendName) {
   }
 }
 
-function selectBackendPath(useGpu, backendType = "auto") {
-  const resolvedType = resolveBackendType(useGpu, backendType);
+function selectBackendPath(useGpu, backendType = "auto", modelPath = "") {
+  const resolvedType = resolveBackendType(useGpu, backendType, modelPath);
   if (osPlatform === "win32") {
     if (resolvedType === "cuda" && fs.existsSync(BACKEND_PATHS.cuda)) return BACKEND_PATHS.cuda;
     if (fs.existsSync(BACKEND_PATHS.vulkan)) return BACKEND_PATHS.vulkan;
@@ -730,6 +774,7 @@ function selectBackendPath(useGpu, backendType = "auto") {
     return BACKEND_PATH;
   }
   if (osPlatform === "darwin") {
+    if (resolvedType === "apple-npu") return "/Users/orailnoor/workspace/coreml_conversion/venv/bin/python";
     if (fs.existsSync(BACKEND_PATHS.mac)) return BACKEND_PATHS.mac;
     return BACKEND_PATH;
   }
@@ -738,9 +783,19 @@ function selectBackendPath(useGpu, backendType = "auto") {
   return BACKEND_PATH;
 }
 
-function resolveBackendType(useGpu, backendType = "auto") {
+function resolveBackendType(useGpu, backendType = "auto", modelPath = "") {
   const options = getBackendOptions();
-  const requestedType = useGpu === false ? "cpu" : backendType === "auto" ? options.defaultBackendType : backendType;
+  let requestedType = useGpu === false ? "cpu" : backendType === "auto" ? options.defaultBackendType : backendType;
+
+  if (modelPath && osPlatform === "darwin") {
+    const lower = modelPath.toLowerCase();
+    if (lower.endsWith(".safetensors") || lower.endsWith(".gguf")) {
+      if (requestedType === "apple-npu") requestedType = "metal";
+    } else if (lower.endsWith(".coreml") || lower.endsWith(".mlpackage") || lower.endsWith(".mlmodelc")) {
+      if (requestedType === "metal") requestedType = "apple-npu";
+    }
+  }
+
   const available = new Set(options.options.map(option => option.id));
   return available.has(requestedType) ? requestedType : options.defaultBackendType;
 }
@@ -751,6 +806,7 @@ function getBackendMode(backendPath, useGpu, backendType = "auto") {
   if (name.includes("cuda")) return "CUDA GPU";
   if (name.includes("rocm")) return "ROCm GPU";
   if (name.includes("vulkan")) return "Vulkan GPU";
+  if (backendType === "apple-npu") return "Apple NPU";
   if (osPlatform === "darwin" || backendType === "metal") return "Metal GPU";
   return "GPU";
 }
@@ -860,10 +916,10 @@ async function startBackend(settings = {}) {
 
   PORT_BACKEND = await findAvailableBackendPort();
 
-  const resolvedBackendType = resolveBackendType(currentSettings.useGpu, currentSettings.backendType);
+  const resolvedBackendType = resolveBackendType(currentSettings.useGpu, currentSettings.backendType, currentSettings.model);
   currentSettings.backendType = resolvedBackendType;
   currentSettings.useGpu = resolvedBackendType !== "cpu";
-  const backendPath = selectBackendPath(currentSettings.useGpu, currentSettings.backendType);
+  const backendPath = selectBackendPath(currentSettings.useGpu, currentSettings.backendType, currentSettings.model);
   const backendMode = getBackendMode(backendPath, currentSettings.useGpu, currentSettings.backendType);
   currentSettings.backendMode = backendMode;
   currentSettings.backendBinary = path.basename(backendPath);
@@ -886,17 +942,28 @@ async function startBackend(settings = {}) {
     runThreads = Math.min(4, runThreads);
   }
 
-  const args = [
-    "--listen-port", String(PORT_BACKEND),
-    "--model",       currentSettings.model,
-    "--steps",       String(currentSettings.steps),
-    "--cfg-scale",   String(currentSettings.cfgScale),
-    "--sampling-method", currentSettings.sampler,
-    "--threads",     String(runThreads),
-  ];
+  let args = [];
+  const requestedBackend = resolveBackendType(currentSettings.useGpu, currentSettings.backendType, currentSettings.model);
 
-  const requestedBackend = resolveBackendType(currentSettings.useGpu, currentSettings.backendType);
-  if (requestedBackend === "cpu") {
+  if (requestedBackend === "apple-npu") {
+    args = [
+      path.join(ROOT, "app", "backend", "mac", "coreml_server.py"),
+      "--listen-port", String(PORT_BACKEND),
+      "--model",       currentSettings.model,
+      "--steps",       String(currentSettings.steps),
+      "--cfg-scale",   String(currentSettings.cfgScale),
+    ];
+  } else {
+    args = [
+      "--listen-port", String(PORT_BACKEND),
+      "--model",       currentSettings.model,
+      "--steps",       String(currentSettings.steps),
+      "--cfg-scale",   String(currentSettings.cfgScale),
+      "--sampling-method", currentSettings.sampler,
+      "--threads",     String(runThreads),
+    ];
+
+    if (requestedBackend === "cpu") {
     args.push(
       "--backend", "cpu",
       "--params-backend", "cpu",
@@ -927,18 +994,23 @@ async function startBackend(settings = {}) {
     );
   } else if (requestedBackend === "metal") {
     args.push(
-      "--backend", "metal0",
-      "--params-backend", "metal0",
       "--rng", "cpu",
       "--sampler-rng", "cpu",
     );
   }
 
-  if (currentSettings.vaeTiling) {
-    args.push("--vae-tiling");
   }
-  if (currentSettings.vaeOnCpu) {
-    args.push("--vae-on-cpu");
+
+  if (requestedBackend !== "apple-npu") {
+    if (currentSettings.vaeTiling) {
+      args.push("--vae-tiling");
+    }
+    if (currentSettings.vaeOnCpu) {
+      args.push("--vae-on-cpu");
+    }
+    if (currentSettings.flashAttn) {
+      args.push("--fa");
+    }
   }
 
   // Build environment for Linux backends so bundled .so libraries are found.
@@ -959,7 +1031,7 @@ async function startBackend(settings = {}) {
       const existing = spawnEnv.LD_LIBRARY_PATH || "";
       spawnEnv.LD_LIBRARY_PATH = extraLibs.join(":") + (existing ? ":" + existing : "");
     }
-  } else if (osPlatform === "darwin") {
+  } else if (osPlatform === "darwin" && requestedBackend !== "apple-npu") {
     const existing = spawnEnv.DYLD_LIBRARY_PATH || "";
     const backendDir = path.dirname(BACKEND_PATHS.mac);
     spawnEnv.DYLD_LIBRARY_PATH = backendDir + (existing ? ":" + existing : "");
@@ -1319,6 +1391,17 @@ function startModelDownload(url, overrideFilename = null) {
           }
           try { fs.unlinkSync(destPath); } catch (_) {}
           fs.renameSync(tempPath, destPath);
+
+          if (destPath.toLowerCase().endsWith(".zip")) {
+            try {
+              const { execSync } = require("child_process");
+              execSync(`unzip -o "${destPath}" -d "${path.dirname(destPath)}"`, { stdio: "ignore" });
+              fs.unlinkSync(destPath);
+            } catch(err) {
+              console.error("Failed to unzip", err);
+            }
+          }
+
           downloadState.active = false;
           downloadFinalized = true;
           downloadState.progress = 100;
@@ -1377,7 +1460,7 @@ const MIME = {
 
 function isModelFile(filename) {
   const lower = String(filename || "").toLowerCase();
-  return lower.endsWith(".safetensors") || lower.endsWith(".gguf") || lower.endsWith(".ckpt");
+  return lower.endsWith(".safetensors") || lower.endsWith(".gguf") || lower.endsWith(".ckpt") || lower.endsWith(".coreml") || lower.endsWith(".coreml.zip");
 }
 
 function formatBytes(bytes) {
@@ -1396,9 +1479,9 @@ function getModelLoadIssue(modelPath) {
     return `Model file not found: ${filename || "unknown model"}`;
   }
 
-  const stats = fs.statSync(modelPath);
-  if (stats.size < 128 * 1024 * 1024) {
-    return `${filename} is too small to be a complete image model (${formatBytes(stats.size)}). Delete it and download/import it again.`;
+  const size = getPathSize(modelPath);
+  if (size < 128 * 1024 * 1024) {
+    return `${filename} is too small to be a complete image model (${formatBytes(size)}). Delete it and download/import it again.`;
   }
 
   if (ext === ".gguf") {
@@ -1765,6 +1848,7 @@ const server = http.createServer(async (req, res) => {
     }
     if (typeof body.vae_tiling === "boolean") newSettings.vaeTiling = body.vae_tiling;
     if (typeof body.vae_on_cpu === "boolean") newSettings.vaeOnCpu = body.vae_on_cpu;
+    if (typeof body.flash_attn === "boolean") newSettings.flashAttn = body.flash_attn;
     try {
       await startBackend(newSettings);
       return json(res, 200, { ok: true, message: "Backend restarting...", settings: currentSettings, port: PORT_BACKEND });

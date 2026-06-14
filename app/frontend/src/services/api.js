@@ -256,6 +256,7 @@ export async function startServer(modelPath, constraints) {
         backend_type: constraints.backendType || (constraints.useGpu === false ? "cpu" : "auto"),
         vae_tiling: constraints.vaeTiling !== false,
         vae_on_cpu: constraints.vaeOnCpu === true,
+        flash_attn: constraints.useFlashAttn !== false,
       }),
     });
     const text = await res.text();
