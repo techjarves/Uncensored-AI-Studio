@@ -394,7 +394,7 @@ function Settings({
     threads: settings?.threads || specs?.cpu_cores_physical || 4,
     contextSize: settings?.contextSize ?? 0,
     gpuLayers: settings?.gpuLayers ?? -1,
-    enableThinking: settings?.enableThinking !== false,
+    enableThinking: settings?.enableThinking === true,
     flashAttn: settings?.flashAttn,
     cacheTypeK: settings?.cacheTypeK,
     cacheTypeV: settings?.cacheTypeV,

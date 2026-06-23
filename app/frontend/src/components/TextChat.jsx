@@ -194,6 +194,9 @@ function TextChat({
   const fileInputRef = useRef(null);
   const supportsVision = Boolean(status.ready && status.settings?.supportsVision);
   const supportsThinking = Boolean(status.ready && status.settings?.supportsThinking);
+  const deepThinkEnabled = status.ready
+    ? status.settings?.enableThinking === true
+    : textSettings?.enableThinking === true;
   const visionStatus = status.settings?.visionStatus || "Image input requires a matching mmproj projector file.";
 
   const resizeComposerInput = useCallback(() => {
@@ -344,7 +347,7 @@ function TextChat({
     threads: settings?.threads || specs?.cpu_cores_physical || 4,
     contextSize: settings?.contextSize ?? 0,
     gpuLayers: settings?.gpuLayers ?? -1,
-    enableThinking: settings?.enableThinking !== false,
+    enableThinking: settings?.enableThinking === true,
     flashAttn: settings?.flashAttn,
     cacheTypeK: settings?.cacheTypeK,
     cacheTypeV: settings?.cacheTypeV,
@@ -358,7 +361,7 @@ function TextChat({
   });
 
   const handleThinkingToggle = async () => {
-    const enabled = textSettings.enableThinking === false;
+    const enabled = !deepThinkEnabled;
     const nextSettings = { ...textSettings, enableThinking: enabled };
 
     if (!status.ready || !status.settings?.model) {
@@ -519,7 +522,7 @@ function TextChat({
         threads: textSettings?.threads || specs?.cpu_cores_physical || 4,
         contextSize: textSettings?.contextSize ?? 0,
         gpuLayers: textSettings?.gpuLayers ?? -1,
-        enableThinking: textSettings?.enableThinking !== false,
+        enableThinking: textSettings?.enableThinking === true,
         flashAttn: textSettings?.flashAttn,
         cacheTypeK: textSettings?.cacheTypeK,
         cacheTypeV: textSettings?.cacheTypeV,
@@ -678,7 +681,7 @@ function TextChat({
       let thinkingEndedAt = null;
       let thinkingDuration = 0;
 
-      const thinkingEnabled = textSettings?.enableThinking !== false;
+      const thinkingEnabled = deepThinkEnabled;
       const manualMaxTokens = textSettings?.maxTokens || 1024;
       const effectiveMaxTokens = textSettings?.responseTokenMode === "manual"
         ? (thinkingEnabled ? Math.max(manualMaxTokens, 1024) : manualMaxTokens)
@@ -707,7 +710,7 @@ function TextChat({
           : Math.max(0.05, (now - requestStartedAt) / 1000);
         
         rawAssistantText = fullText;
-        const processed = processMessageContent(fullText, fullReasoning, textSettings?.enableThinking !== false);
+        const processed = processMessageContent(fullText, fullReasoning, deepThinkEnabled);
         assistantText = processed.content;
         assistantReasoning = processed.reasoning;
 
@@ -787,7 +790,7 @@ function TextChat({
         truncated: response.finishReason === "length",
       };
       
-      const processed = processMessageContent(response.content || rawAssistantText || assistantText, response.reasoningContent || assistantReasoning, textSettings?.enableThinking !== false);
+      const processed = processMessageContent(response.content || rawAssistantText || assistantText, response.reasoningContent || assistantReasoning, deepThinkEnabled);
       const finalMessages = [...nextMessages, {
         role: "assistant",
         content: processed.content,
@@ -1029,7 +1032,7 @@ function TextChat({
                 const processed = processMessageContent(
                   Array.isArray(message.content) ? "" : (message.content || ""),
                   message.reasoning || "",
-                  textSettings?.enableThinking !== false
+                  deepThinkEnabled
                 );
                 const displayContent = Array.isArray(message.content) ? message.content : processed.content;
                 const displayReasoning = processed.reasoning;
@@ -1052,7 +1055,7 @@ function TextChat({
                       <span className="chat-sender-label">
                         {message.role === "user" ? "You" : "Local AI"}
                       </span>
-                      {message.role === "assistant" && displayReasoning && textSettings?.enableThinking !== false && (
+                      {message.role === "assistant" && displayReasoning && deepThinkEnabled && (
                         <ThinkingBlock
                           reasoning={displayReasoning}
                           thinkingDuration={message.thinkingDuration}
@@ -1179,35 +1182,33 @@ function TextChat({
               onClick={() => fileInputRef.current?.click()}
               disabled={!supportsVision || isBusy}
               title={supportsVision ? "Attach files or images" : visionStatus}
-              style={{ marginBottom: "2px" }}
             >
               <Paperclip size={17} />
             </button>
             <button
-              className={`chat-composer-deepthink-btn ${useWebSearch ? "active" : ""}`}
+              className={`chat-composer-deepthink-btn web-search-btn ${useWebSearch ? "active" : ""}`}
               onClick={() => setUseWebSearch((value) => !value)}
               disabled={!status.ready || isBusy}
               title={useWebSearch ? "Disable web search" : "Enable web search"}
-              style={{ marginBottom: "2px" }}
             >
               <Globe2 size={14} />
               <span>Web</span>
             </button>
-            {useWebSearch && (
-              <select
-                className="m3-input"
-                value={webTimeFilter}
-                onChange={(event) => setWebTimeFilter(event.target.value)}
-                disabled={isBusy}
-                title="Search recency"
-                style={{ width: "116px", height: "38px", marginBottom: "2px", fontSize: "0.78rem" }}
+
+
+            {status.ready && supportsThinking && (
+              <button
+                className={`chat-composer-deepthink-btn deepthink-btn ${deepThinkEnabled ? "active" : ""}`}
+                onClick={handleThinkingToggle}
+                title={deepThinkEnabled ? "Disable DeepThink reasoning" : "Enable DeepThink reasoning"}
               >
-                <option value="any">Any time</option>
-                <option value="day">Past day</option>
-                <option value="week">Past week</option>
-                <option value="month">Past month</option>
-                <option value="year">Past year</option>
-              </select>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className={deepThinkEnabled ? "rotate-anim" : ""}>
+                  <circle cx="12" cy="12" r="3" />
+                  <ellipse cx="12" cy="12" rx="3" ry="9" />
+                  <ellipse cx="12" cy="12" rx="9" ry="3" />
+                </svg>
+                <span>DeepThink</span>
+              </button>
             )}
 
             <div className="chat-composer-middle" style={{ flex: 1, display: "flex", minWidth: 0 }}>
@@ -1228,23 +1229,8 @@ function TextChat({
               />
             </div>
 
-            {status.ready && supportsThinking && (
-              <button
-                className={`chat-composer-deepthink-btn ${textSettings.enableThinking !== false ? "active" : ""}`}
-                onClick={handleThinkingToggle}
-                title={textSettings.enableThinking !== false ? "Disable DeepThink reasoning" : "Enable DeepThink reasoning"}
-              >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className={textSettings.enableThinking !== false ? "rotate-anim" : ""}>
-                  <circle cx="12" cy="12" r="3" />
-                  <ellipse cx="12" cy="12" rx="3" ry="9" />
-                  <ellipse cx="12" cy="12" rx="9" ry="3" />
-                </svg>
-                <span>DeepThink</span>
-              </button>
-            )}
-
             {isBusy && status.ready ? (
-              <button className="chat-composer-stop-btn" onClick={handleStopGeneration} title="Stop generation" style={{ marginBottom: "2px" }}>
+              <button className="chat-composer-stop-btn" onClick={handleStopGeneration} title="Stop generation">
                 <Square size={15} fill="currentColor" />
               </button>
             ) : (
@@ -1253,7 +1239,6 @@ function TextChat({
                 onClick={sendMessage}
                 disabled={(!input.trim() && attachments.length === 0) || !status.ready}
                 title="Send message"
-                style={{ marginBottom: "2px" }}
               >
                 <Send size={17} />
               </button>

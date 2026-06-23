@@ -866,26 +866,34 @@ body {
   display: flex;
   flex-direction: column;
   gap: 0;
-  padding: 8px 14px 10px;
+  padding: 10px 14px 12px;
   border-top: 1px solid var(--border-color);
-  background: color-mix(in srgb, var(--md-sys-color-surface) 80%, transparent);
-  backdrop-filter: blur(12px);
+  background: color-mix(in srgb, var(--md-sys-color-surface) 85%, transparent);
+  backdrop-filter: blur(16px);
 }
 
 .chat-composer-inner {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   gap: 8px;
   background: var(--md-sys-color-surface-variant);
-  border: 1.5px solid var(--border-color);
-  border-radius: 16px;
-  padding: 4px 5px 4px 10px;
-  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  border: 1px solid var(--border-color);
+  border-radius: 24px;
+  padding: 6px 6px 6px 14px;
+  transition: border-color 0.25s cubic-bezier(0.4, 0, 0.2, 1), 
+              box-shadow 0.25s cubic-bezier(0.4, 0, 0.2, 1), 
+              background-color 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.chat-composer-inner:hover {
+  border-color: color-mix(in srgb, var(--md-sys-color-primary) 30%, var(--border-color));
 }
 
 .chat-composer-inner:focus-within {
   border-color: var(--md-sys-color-primary);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--md-sys-color-primary) 14%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--md-sys-color-primary) 15%, transparent),
+              0 4px 16px rgba(0, 0, 0, 0.08);
+  background: color-mix(in srgb, var(--md-sys-color-surface-variant) 97%, var(--md-sys-color-primary));
 }
 
 .chat-composer textarea,
@@ -907,31 +915,33 @@ body {
   border: none !important;
   background: transparent !important;
   color: var(--md-sys-color-on-surface);
-  padding: 4px 0;
+  padding: 6px 0;
   font: inherit;
   font-size: 0.92rem;
   outline: none;
   resize: none;
   min-height: 28px;
-  max-height: 104px;
+  max-height: 120px;
   line-height: 1.45;
   overflow-y: auto;
+  margin-bottom: 2px;
 }
 
 .chat-composer-textarea::placeholder {
   color: var(--md-sys-color-outline);
   font-weight: 400;
+  opacity: 0.8;
 }
 
 .chat-composer textarea {
   min-height: 34px;
-  max-height: 104px;
+  max-height: 120px;
   resize: vertical;
 }
 
 .chat-composer-send-btn {
-  width: 34px;
-  height: 34px;
+  width: 32px;
+  height: 32px;
   border-radius: 50%;
   border: none;
   flex-shrink: 0;
@@ -939,31 +949,33 @@ body {
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: all 0.18s ease;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   background: linear-gradient(135deg, var(--md-sys-color-primary), color-mix(in srgb, var(--md-sys-color-primary) 75%, #7c3aed));
   color: var(--md-sys-color-on-primary);
-  box-shadow: 0 2px 8px color-mix(in srgb, var(--md-sys-color-primary) 35%, transparent);
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--md-sys-color-primary) 30%, transparent);
+  margin-bottom: 2px;
 }
 
 .chat-composer-send-btn:hover:not(:disabled) {
-  transform: scale(1.08);
-  box-shadow: 0 4px 16px color-mix(in srgb, var(--md-sys-color-primary) 50%, transparent);
+  transform: scale(1.08) translateY(-1px);
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--md-sys-color-primary) 45%, transparent);
 }
 
 .chat-composer-send-btn:active:not(:disabled) {
-  transform: scale(0.95);
+  transform: scale(0.96) translateY(0);
 }
 
 .chat-composer-send-btn:disabled {
-  background: var(--md-sys-color-surface-variant);
+  background: color-mix(in srgb, var(--md-sys-color-surface-variant) 80%, transparent);
   color: var(--md-sys-color-outline);
+  opacity: 0.5;
   box-shadow: none;
   cursor: not-allowed;
 }
 
 .chat-composer-stop-btn {
-  width: 34px;
-  height: 34px;
+  width: 32px;
+  height: 32px;
   border-radius: 50%;
   border: none;
   flex-shrink: 0;
@@ -971,11 +983,12 @@ body {
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: all 0.18s ease;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   background: color-mix(in srgb, var(--md-sys-color-error) 15%, var(--md-sys-color-surface-variant));
   color: var(--md-sys-color-error);
   border: 1.5px solid color-mix(in srgb, var(--md-sys-color-error) 40%, transparent);
   animation: stopPulse 1.5s ease-in-out infinite;
+  margin-bottom: 2px;
 }
 
 @keyframes stopPulse {
@@ -985,12 +998,12 @@ body {
 
 .chat-composer-stop-btn:hover {
   background: color-mix(in srgb, var(--md-sys-color-error) 22%, var(--md-sys-color-surface-variant));
-  transform: scale(1.08);
+  transform: scale(1.08) translateY(-1px);
 }
 
 .chat-composer-attach-btn {
-  width: 30px;
-  height: 30px;
+  width: 32px;
+  height: 32px;
   border-radius: 50%;
   border: none;
   flex-shrink: 0;
@@ -998,14 +1011,16 @@ body {
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: all 0.18s ease;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   background: transparent;
   color: var(--md-sys-color-outline);
+  margin-bottom: 2px;
 }
 
 .chat-composer-attach-btn:hover:not(:disabled) {
   background: color-mix(in srgb, var(--md-sys-color-primary) 10%, transparent);
   color: var(--md-sys-color-primary);
+  transform: translateY(-1px);
 }
 
 .chat-composer-attach-btn:disabled {
@@ -1022,27 +1037,98 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 0 10px;
+  padding: 0 12px;
   border-radius: 999px;
   border: 1px solid var(--border-color);
-  background: transparent;
+  background: color-mix(in srgb, var(--md-sys-color-surface-variant) 40%, transparent);
   color: var(--md-sys-color-outline);
   font-family: Outfit, sans-serif;
   font-size: 0.78rem;
-  font-weight: 700;
+  font-weight: 600;
   cursor: pointer;
   flex-shrink: 0;
-  transition: color 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  margin-bottom: 2px;
+}
+
+.chat-composer-deepthink-btn:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--md-sys-color-primary) 40%, transparent);
+  background: color-mix(in srgb, var(--md-sys-color-primary) 8%, transparent);
+  color: var(--md-sys-color-on-surface);
+  transform: translateY(-1px);
 }
 
 .chat-composer-deepthink-btn.active {
-  background: color-mix(in srgb, var(--md-sys-color-primary) 14%, transparent);
-  border-color: color-mix(in srgb, var(--md-sys-color-primary) 35%, transparent);
+  background: color-mix(in srgb, var(--md-sys-color-primary) 12%, transparent);
+  border-color: color-mix(in srgb, var(--md-sys-color-primary) 40%, transparent);
   color: var(--md-sys-color-primary);
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--md-sys-color-primary) 10%, transparent);
 }
 
-.chat-composer-deepthink-btn:hover {
-  border-color: color-mix(in srgb, var(--md-sys-color-primary) 35%, transparent);
+.chat-composer-deepthink-btn.deepthink-btn.active {
+  background: color-mix(in srgb, var(--md-sys-color-primary) 14%, transparent);
+  border-color: color-mix(in srgb, var(--md-sys-color-primary) 45%, transparent);
+  color: var(--md-sys-color-primary);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--md-sys-color-primary) 15%, transparent);
+}
+
+.chat-composer-deepthink-btn.active:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--md-sys-color-primary) 18%, transparent);
+  transform: translateY(-1px);
+}
+
+/* Custom Dropdown select */
+.chat-composer-select {
+  height: 32px;
+  width: 105px;
+  border-radius: 999px;
+  border: 1px solid var(--border-color);
+  background-color: color-mix(in srgb, var(--md-sys-color-surface-variant) 40%, transparent);
+  color: var(--md-sys-color-outline);
+  font-family: Outfit, sans-serif;
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 0 26px 0 12px;
+  cursor: pointer;
+  outline: none;
+  margin-bottom: 2px;
+  flex-shrink: 0;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23888888' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+}
+
+.chat-composer-select:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--md-sys-color-primary) 40%, transparent);
+  background-color: color-mix(in srgb, var(--md-sys-color-primary) 8%, transparent);
+  color: var(--md-sys-color-on-surface);
+  transform: translateY(-1px);
+}
+
+.chat-composer-select:focus {
+  border-color: var(--md-sys-color-primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--md-sys-color-primary) 15%, transparent);
+}
+
+.chat-composer-select option {
+  background-color: var(--md-sys-color-surface);
+  color: var(--md-sys-color-on-surface);
+  padding: 8px;
+}
+
+@keyframes rotateThinking {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+.rotate-anim {
+  animation: rotateThinking 7s linear infinite;
 }
 
 .text-chat-settings {

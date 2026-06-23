@@ -3653,6 +3653,22 @@ function chooseAutoContext(modelFilename, isGpu) {
     }
   } catch (_) {}
 
+  const lowerFilename = String(modelFilename || "").toLowerCase();
+  const isVisionModel = isVisionModelFilename(lowerFilename);
+  let projectorSizeGb = 0;
+  if (isVisionModel) {
+    try {
+      const files = fs.readdirSync(LLM_MODELS);
+      const projector = files.find((file) => {
+        const lower = file.toLowerCase();
+        return lower.endsWith(".gguf") && lower.includes("mmproj");
+      });
+      if (projector) {
+        projectorSizeGb = fs.statSync(path.join(LLM_MODELS, projector)).size / (1024 * 1024 * 1024);
+      }
+    } catch (_) {}
+  }
+
   const systemRamGb = os.totalmem() / (1024 * 1024 * 1024);
   let vramGb = 0;
   try {
@@ -3673,7 +3689,18 @@ function chooseAutoContext(modelFilename, isGpu) {
     bufferGb = 2.5;
   }
 
-  const usableGb = Math.max(0.5, availableGb - modelSizeGb - bufferGb);
+  if (isGpu && vramGb > 0) {
+    const gpuBudgetGb = Math.max(0.5, vramGb - modelSizeGb - projectorSizeGb - bufferGb);
+    const maxFastContext = vramGb < 10 ? 8192 : vramGb < 16 ? 16384 : 32768;
+    if (isVisionModel) {
+      return Math.min(maxFastContext, gpuBudgetGb >= 2.5 ? 8192 : 4096);
+    }
+    if (gpuBudgetGb < 1.5) return 4096;
+    if (gpuBudgetGb < 3.0) return Math.min(maxFastContext, 8192);
+    return Math.min(maxFastContext, 16384);
+  }
+
+  const usableGb = Math.max(0.5, availableGb - modelSizeGb - projectorSizeGb - bufferGb);
 
   let kvPer4096Gb = 0.55;
   if (modelSizeGb >= 5.5) {
@@ -3691,6 +3718,27 @@ function chooseAutoContext(modelFilename, isGpu) {
     }
   }
   return 2048;
+}
+
+function isVisionModelFilename(filename = "") {
+  const lower = String(filename || "").toLowerCase();
+  return lower.includes("llava") ||
+    lower.includes("vision") ||
+    lower.includes("qwen2vl") ||
+    lower.includes("qwen2-vl") ||
+    lower.includes("qwen3.5-4b-vision") ||
+    lower.includes("gemma-4") ||
+    lower.includes("gemma4") ||
+    lower.includes("-e2b-") ||
+    lower.includes("e2b-it") ||
+    lower.includes("paligemma") ||
+    lower.includes("minicpm-v") ||
+    lower.includes("internvl") ||
+    lower.includes("phi-3-vision") ||
+    lower.includes("phi3-vision") ||
+    lower.includes("smolvlm") ||
+    lower.includes("moondream") ||
+    lower === "ggml-model-q4_k.gguf";
 }
 
 function buildLlmLoadProfiles(settings = {}, backend = {}) {
@@ -3819,7 +3867,7 @@ async function startLlmWithBackend(settings = {}, backend) {
   const effectiveCacheTypeV = isSyclBackend ? "q4_0" : loadProfile.cacheTypeV || settings.cacheTypeV || llmSettings.cacheTypeV || "q8_0";
   const effectiveBatchSize = isSyclBackend ? Math.min(256, Number(loadProfile.batchSize ?? settings.batchSize) || llmSettings.batchSize || 512) : Number(loadProfile.batchSize ?? settings.batchSize) || llmSettings.batchSize || 512;
   const effectiveUbatchSize = isSyclBackend ? Math.min(256, Number(loadProfile.ubatchSize ?? settings.ubatchSize) || llmSettings.ubatchSize || 512) : Number(loadProfile.ubatchSize ?? settings.ubatchSize) || llmSettings.ubatchSize || 512;
-  const effectiveEnableThinking = isSyclBackend && effectiveGpuLayers === 0 ? false : (loadProfile.enableThinking ?? (settings.enableThinking !== false));
+  const effectiveEnableThinking = isSyclBackend && effectiveGpuLayers === 0 ? false : (loadProfile.enableThinking ?? (settings.enableThinking === true));
 
   llmSettings = {
     ...llmSettings,
@@ -3848,22 +3896,7 @@ async function startLlmWithBackend(settings = {}, backend) {
 
   let mmprojPath = null;
   const lowerFilename = filename.toLowerCase();
-  const isMultimodal = lowerFilename.includes("llava") ||
-                       lowerFilename.includes("vision") ||
-                       lowerFilename.includes("qwen2vl") ||
-                       lowerFilename.includes("qwen2-vl") ||
-                       lowerFilename.includes("gemma-4") ||
-                       lowerFilename.includes("gemma4") ||
-                       lowerFilename.includes("-e2b-") ||
-                       lowerFilename.includes("e2b-it") ||
-                       lowerFilename.includes("paligemma") ||
-                       lowerFilename.includes("minicpm-v") ||
-                       lowerFilename.includes("internvl") ||
-                       lowerFilename.includes("phi-3-vision") ||
-                       lowerFilename.includes("phi3-vision") ||
-                       lowerFilename.includes("smolvlm") ||
-                       lowerFilename.includes("moondream") ||
-                       lowerFilename === "ggml-model-q4_k.gguf";
+  const isMultimodal = isVisionModelFilename(lowerFilename);
 
   if (isMultimodal) {
     if (settings.mmproj) {
@@ -3958,7 +3991,7 @@ async function startLlmWithBackend(settings = {}, backend) {
   } else if (llmSettings.supportsThinking) {
     args.push("--reasoning", "on");            // ✅ Enable reasoning for supported models
   }
-  if (llmSettings.enableThinking !== false && llmSettings.supportsThinking) {
+  if (llmSettings.enableThinking === true && llmSettings.supportsThinking) {
     args.push("--reasoning-format", "deepseek"); // ✅ Extract thoughts into reasoning_content
   }
   if (mmprojPath) {
