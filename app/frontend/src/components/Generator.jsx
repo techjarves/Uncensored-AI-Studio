@@ -294,6 +294,19 @@ function Generator({
           const step = decoding ? (progress.steps || constraints.steps || 20) : (progress.step || 0);
           const steps = progress.steps || constraints.steps || 20;
           const speed = decoding ? "" : (progress.speed || "");
+          const numericSpeed = parseFloat(speed);
+          const backendMode = String(progress.backendMode || "").toLowerCase();
+          const backendDevice = String(progress.backendDevice || "").toLowerCase();
+          const isConfirmedGpuBackend = (
+            backendMode.includes("gpu") ||
+            backendMode.includes("vulkan") ||
+            backendMode.includes("cuda") ||
+            backendMode.includes("rocm") ||
+            backendMode.includes("metal") ||
+            backendDevice.includes("vulkan") ||
+            backendDevice.includes("cuda") ||
+            backendDevice.includes("rocm")
+          );
 
           if (decoding || progress.steps > 0) {
             hasRealGenerationStepRef.current = true;
@@ -324,7 +337,6 @@ function Generator({
           if (decoding) {
             remaining = 3;
           } else {
-            const numericSpeed = parseFloat(speed);
             if (!isNaN(numericSpeed) && numericSpeed > 0) {
               const remainingSteps = Math.max(0, steps - step);
               if (speed.includes("it/s")) {
@@ -339,7 +351,7 @@ function Generator({
           }
 
           // Detect CPU fallback / slow generation if GPU was requested but it runs slow
-          if (gpuSelected && !cpuFallbackDetected) {
+          if (gpuSelected && !cpuFallbackDetected && !isConfirmedGpuBackend) {
             const isSlowItS = speed.includes("it/s") && numericSpeed < 0.2;
             const isSlowSIt = speed.includes("s/it") && numericSpeed > 5.0;
             if (isSlowItS || isSlowSIt) {

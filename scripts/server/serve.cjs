@@ -4914,6 +4914,8 @@ let generationState = {
   steps: 0,
   speed: "",
   decoding: false,
+  backendMode: "",
+  backendDevice: "",
 };
 
 function resetGenerationState() {
@@ -4923,6 +4925,8 @@ function resetGenerationState() {
     steps: 0,
     speed: "",
     decoding: false,
+    backendMode: "",
+    backendDevice: "",
   };
 }
 
@@ -6693,7 +6697,11 @@ async function getLlmfitRecommendations(useCase = "chat", limit = 10) {
 
   // GET /api/generation-progress
   if (req.url === "/api/generation-progress" && req.method === "GET") {
-    return json(res, 200, generationState);
+    return json(res, 200, {
+      ...generationState,
+      backendMode: generationState.backendMode || currentSettings.backendMode || "",
+      backendDevice: generationState.backendDevice || currentSettings.backendDevice || "",
+    });
   }
 
   if (req.url === "/api/openvino-generate" && req.method === "POST") {
